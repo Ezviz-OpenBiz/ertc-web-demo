@@ -9,7 +9,7 @@
 
 ### 下载 Demo 源码
 
-访问 [GitHub 源码地址](https://github.com/Ezviz-OpenBiz/ertc-web-demo) 下载 ertc-web 源码包
+访问 [GitHub 源码地址](https://github.com/Ezviz-OpenBiz/ertc-web-demo) 下载 ertc-web demo 源码包
 
 ### 运行 demo
 
