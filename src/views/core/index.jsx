@@ -13,11 +13,13 @@ import {
   Flex,
   Badge,
 } from "antd";
+import { useSearchParams } from "react-router-dom";
 import CollapseC from "./CollapseC";
 
 import "./index.less";
 
 export default function Core() {
+  const [searchParams] = useSearchParams();
   const [ezrtc, setEzrtc] = useState(null); // EzRTC 实例
   const [logs, setLogs] = useState([]);
   const [hasMediaPermission, setHasMediaPermission] = useState(false);
@@ -33,6 +35,7 @@ export default function Core() {
   const [microphonesList, setMicrophonesList] = useState([]);
   const [profile, setProfile] = useState({}); // 视频参数
   const [remoteUsers, setRemoteUsers] = useState([]); // 远端用户
+  const [localStream, setLocalStream] = useState(null); // 本地流
 
   // 获取媒体权限，页面加载时调用
   const getMediaPermission = () => {
@@ -50,6 +53,7 @@ export default function Core() {
   };
   // 添加日志
   const addLog = (log) => {
+    log.date = new Date().toLocaleString(); // 记录当前时间
     setLogs((pre) => [...pre, log]);
   };
   // 清除日志
@@ -118,7 +122,16 @@ export default function Core() {
   const getMicrophonesList = () => {
     ezrtc.getMicrophonesList().then((list) => {
       console.log("麦克风列表", list);
-      setMicrophonesList(list || []);
+
+      const listFilter = list.reduce((acc, current) => {
+        const x = acc.find((item) => item.groupId === current.groupId);
+        if (!x) {
+          return acc.concat([current]);
+        } else {
+          return acc;
+        }
+      }, []);
+      setMicrophonesList(listFilter || []);
     });
   };
 
@@ -284,8 +297,8 @@ export default function Core() {
       if (
         [
           ERTC.EVENT.AUDIOLEVEL,
-          ERTC.EVENT.REPORT_NETWORK_QUALITY,
           ERTC.EVENT.USERS_CHANGE,
+          ERTC.EVENT.NETWORKQUALITY,
         ].includes(value)
       ) {
         // 过滤掉一些事件,避免打印过多日志
@@ -309,9 +322,31 @@ export default function Core() {
       //   }
       // }
 
+      // 监听错误
+      if (value === ERTC.EVENT.ERROR) {
+        fn = (msg) => {
+          addLog({ type: "error", label: json(msg) });
+        };
+      }
+
+      // 网络质量上报
+      if (value === ERTC.EVENT.REPORT_NETWORK_QUALITY) {
+        fn = ({ uplink, downlink }) => {
+          addLog({
+            type: "default",
+            label: `上行网络质量：${uplink.quality}，上行丢包率：${uplink.packageLost}，上行抖动：${uplink.jitter} ms，上行延时：${uplink.rtt} ms`,
+          });
+          addLog({
+            type: "default",
+            label: `下行网络质量：${downlink.quality}，下行丢包率：${downlink.packageLost}，下行抖动：${downlink.jitter} ms，下行延时：${downlink.rtt} ms`,
+          });
+        };
+      }
+
       // 远端用户加入房间
       if (value === ERTC.EVENT.CLIENTJOIN) {
         fn = (msg) => {
+          fnLog(msg);
           const userId = msg.customId;
           setRemoteUsers((pre) => [...pre, { userId }]);
         };
@@ -319,6 +354,7 @@ export default function Core() {
       // 远端用户离开房间
       if (value === ERTC.EVENT.CLIENTLEAVE) {
         fn = (msg) => {
+          fnLog(msg);
           const userId = msg.customId;
           setRemoteUsers((pre) => pre.filter((item) => item.userId !== userId));
         };
@@ -354,23 +390,41 @@ export default function Core() {
       // 远端流删除
       if (value === ERTC.EVENT.STREAM_REMOVED) {
         // ...
+        fn = (msg) => {
+          fnLog(msg);
+          // 默认不自动订阅小流
+          if (msg.streamtype === ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE) {
+            return;
+          }
+          // 取消订阅音频流、视频大流、屏幕共享流
+          rtc
+            .unsubscribe({ userId: msg.customId, type: msg.streamtype })
+            .then((res) => {
+              addLog({
+                type: "success",
+                label: `取消订阅成功，用户：${msg.customId}，流类型：${msg.streamtype}`,
+              });
+            })
+            .catch((err) => {
+              addLog({
+                type: "error",
+                label: `取消订阅失败，用户：${msg.customId}，流类型：${
+                  msg.streamtype
+                }，原因：${json(err)}`,
+              });
+            });
+        };
       }
 
       // 获取到本地流
       if (value === ERTC.EVENT.LOCAL_STREAM_AVAILABLE) {
         fn = ({ stream, streamType }) => {
-          const view =
-            streamType === ERTC.STREAM_TYPE.SCREEN ? null : "local-video";
+          const videoStream =
+            streamType === ERTC.STREAM_TYPE.SCREEN ? null : stream;
 
-          view &&
-            rtc
-              .playStream({
-                domId: view,
-                stream: stream,
-              })
-              .then((info) => {
-                addLog({ type: "default", label: "获取到本地流" });
-              });
+          videoStream &&
+            setLocalStream((pre) => ({ stream, refresh: !pre?.refresh })); // 由于react，useEffect不会检测到stream中音视频轨道数量的变化，所以需要加一个refresh字段
+          addLog({ type: "default", label: "获取到本地流" });
         };
       }
 
@@ -414,6 +468,8 @@ export default function Core() {
             addLog({ type: "default", label: "websocket重连失败" });
           } else if (msg.message === "janus destroyed") {
             addLog({ type: "default", label: "websocket连接断开" });
+            // 每次连接断开后，清空远端用户列表
+            setRemoteUsers([]);
           }
         };
       }
@@ -426,7 +482,18 @@ export default function Core() {
    * hooks
    * */
   useEffect(() => {
-    const rtc = new ERTC({ debug: true });
+    const env = searchParams.get("env"); // 从url中获取env参数，用于项目中切换环境，开发者接入可以忽略
+    const domain = searchParams.get("domain"); // url中获取domain参数，用于项目中切换域名，开发者接入可以忽略
+    const ertcSettings = {
+      debug: true,
+      domain: domain
+        ? decodeURIComponent(domain)
+        : env === "dev"
+        ? "https://test12open.ys7.com"
+        : null, // 从url中获取env参数，用于项目中切换环境，开发者接入可以忽略
+    };
+    const rtc = new ERTC(ertcSettings);
+    window.ertc = rtc; // 赋值到全局，方便console中查看
     setEzrtc(rtc);
 
     bindEvents(rtc);
@@ -441,6 +508,12 @@ export default function Core() {
   useEffect(() => {
     setProfile2();
   }, [profile]);
+  // 播放本地视频
+  useEffect(() => {
+    if (localStream?.stream && showLocalVideo) {
+      ezrtc.playStream({ domId: "local-video", stream: localStream.stream });
+    }
+  }, [localStream, showLocalVideo]);
 
   const gutter = [16, 8];
   return (
@@ -552,7 +625,7 @@ export default function Core() {
               onChange={(value) => changeProfile("frameRate", value)}
             ></InputNumber>
           </Col>
-          <Col span={4}>
+          <Col span={6}>
             <InputNumber
               addonBefore="传输码率"
               style={{ width: "100%" }}
@@ -563,14 +636,15 @@ export default function Core() {
           </Col>
           <Col span={4}>
             <Switch
-              checkedChildren="开启大小流"
-              unCheckedChildren="关闭大小流"
+              checkedChildren="大小流开启"
+              unCheckedChildren="大小流关闭"
               checked={profile["simulcast"]}
               onChange={(value) => changeProfile("simulcast", value)}
             />
           </Col>
         </Row>
       </div>
+
       {/* 操作 */}
       <div className="page-section">
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
@@ -629,6 +703,7 @@ export default function Core() {
           </Flex>
         </Row>
       </div>
+
       {/* 日志 */}
       <div className="page-section">
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
@@ -639,21 +714,27 @@ export default function Core() {
           <div className="logs">
             {logs.map((log, index) => (
               <div key={index}>
-                <Badge status={log.type} text={log.label} />
+                <Badge
+                  status={log.type}
+                  text={`【${log.date}】 ${log.label}`}
+                />
               </div>
             ))}
           </div>
         </Row>
       </div>
+
       {/* 播放窗口 */}
       <div className="page-section">
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
           <Col span={24}>
             播放窗口：
             <Switch
-              checkedChildren="显示本地流播放"
-              unCheckedChildren="关闭本地流播放"
-              onChange={(value) => setShowLocalVideo(!!value)}
+              checkedChildren="本地流显示"
+              unCheckedChildren="本地流隐藏"
+              onChange={(value) => {
+                setShowLocalVideo(!!value);
+              }}
             />
           </Col>
         </Row>
@@ -662,14 +743,16 @@ export default function Core() {
             <div className="user-play">
               <div>用户：</div>
               <Flex gap="small" wrap="wrap">
-                <div style={{ display: showLocalVideo ? "block" : "none" }}>
-                  <div>本地：</div>
-                  <video
-                    id="local-video"
-                    controls
-                    style={{ width: 300, height: 200 }}
-                  ></video>
-                </div>
+                {showLocalVideo && (
+                  <div>
+                    <div>本地：</div>
+                    <video
+                      id="local-video"
+                      controls
+                      style={{ width: 300, height: 200 }}
+                    ></video>
+                  </div>
+                )}
                 {remoteUsers.map((item, index) => {
                   return (
                     <div key={item.userId}>
@@ -696,10 +779,12 @@ export default function Core() {
             </div>
             <div className="screen-play">
               <div>屏幕：</div>
-              <video
-                id="remote-screen"
-                style={{ width: 800, height: 600 }}
-              ></video>
+              {remoteUsers?.length > 0 && (
+                <video
+                  id="remote-screen"
+                  style={{ width: 800, height: 600 }}
+                ></video>
+              )}
             </div>
           </Flex>
         </Row>
