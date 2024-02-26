@@ -9,26 +9,52 @@ export default (props) => {
     props.rtc.getSupport().then((info) => {
       const webSupport = info.isWebrtcSupport ? (
         <div>
-          <p><Badge status="success" text='支持webrtc'></Badge></p>
-          <p><Badge status="success" text='当前浏览器是SDK支持的浏览器'></Badge></p>
-          <p><Badge status="success" text='当前浏览器支持获取媒体设备及媒体流'></Badge> </p>
-          <p><Badge status="success" text='支持屏幕共享'></Badge></p>
+          <p>
+            <Badge status="success" text="支持webrtc"></Badge>
+          </p>
+          <p>
+            <Badge status="success" text="当前浏览器是SDK支持的浏览器"></Badge>
+          </p>
+          <p>
+            <Badge
+              status="success"
+              text="当前浏览器支持获取媒体设备及媒体流"
+            ></Badge>{" "}
+          </p>
+          <p>
+            <Badge status="success" text="支持屏幕共享"></Badge>
+          </p>
         </div>
       ) : (
         <div>
-          <p><Badge status="error" text='不支持webrtc'></Badge></p>
-          <p><Badge status="error" text='当前浏览器不是SDK支持的浏览器'></Badge></p>
-          <p><Badge status="error" text='当前浏览器不支持获取媒体设备及媒体流'></Badge></p>
-          <p><Badge status="error" text='不支持屏幕共享'></Badge></p>
+          <p>
+            <Badge status="error" text="不支持webrtc"></Badge>
+          </p>
+          <p>
+            <Badge status="error" text="当前浏览器不是SDK支持的浏览器"></Badge>
+          </p>
+          <p>
+            <Badge
+              status="error"
+              text="当前浏览器不支持获取媒体设备及媒体流"
+            ></Badge>
+          </p>
+          <p>
+            <Badge status="error" text="不支持屏幕共享"></Badge>
+          </p>
         </div>
       );
       const H264Support = info.isH264Support ? (
         <div>
-          <p><Badge status="success" text='支持h264编码'></Badge></p>
+          <p>
+            <Badge status="success" text="支持h264编码"></Badge>
+          </p>
         </div>
       ) : (
         <div>
-          <p><Badge status="error" text='不支持h264编码'></Badge></p>
+          <p>
+            <Badge status="error" text="不支持h264编码"></Badge>
+          </p>
         </div>
       );
 
@@ -66,11 +92,33 @@ export default (props) => {
       label: "步骤2：登录控制台创建应用",
       children: (
         <div>
-          <BadgeNode text={<span>登录 <a target="_blank" href="https://open.ys7.com/console/home.html">萤石云开放平台</a>，点击【云通话】-【实时音视频】</span>}></BadgeNode>
+          <BadgeNode
+            text={
+              <span>
+                登录{" "}
+                <a
+                  target="_blank"
+                  href="https://open.ys7.com/console/home.html"
+                >
+                  萤石云开放平台
+                </a>
+                ，点击【云通话】-【实时音视频】
+              </span>
+            }
+          ></BadgeNode>
           <BadgeNode text="点击【创建项目】，创建实时音视频项目">
             <img src={imgStep_2_1} style={{ width: 700 }} />
           </BadgeNode>
-          <BadgeNode text={<span>你也可以通过接口进行管理与创建，地址是：<a target="_blank" href="https://open.ys7.com/help/1895">https://open.ys7.com/help/1895</a></span>}></BadgeNode>
+          <BadgeNode
+            text={
+              <span>
+                你也可以通过接口进行管理与创建，地址是：
+                <a target="_blank" href="https://open.ys7.com/help/1895">
+                  https://open.ys7.com/help/1895
+                </a>
+              </span>
+            }
+          ></BadgeNode>
         </div>
       ),
     },
@@ -86,7 +134,13 @@ export default (props) => {
             <img src={imgStep_3_1} style={{ width: 700 }} />
           </BadgeNode>
           <BadgeNode text="获取 RTCToken 填入输入框">
-            <span>由开发者云办法给终端使用，可参考<a target="_blank" href="https://open.ys7.com/help/1873">https://open.ys7.com/help/1873</a> 使用本地JAVA SDK签名生成</span>
+            <span>
+              由开发者云办法给终端使用，可参考
+              <a target="_blank" href="https://open.ys7.com/help/1873">
+                https://open.ys7.com/help/1873
+              </a>{" "}
+              使用本地JAVA SDK签名生成
+            </span>
           </BadgeNode>
         </div>
       ),
@@ -109,13 +163,22 @@ export default (props) => {
   function BadgeNode({ text, children }) {
     return (
       <div>
-        <Badge
-          color="hwb(205 6% 9%)"
-          text={text}
-        ></Badge>
+        <Badge color="hwb(205 6% 9%)" text={text}></Badge>
         <div>{children}</div>
       </div>
     );
   }
-  return <Collapse items={collapseItems} defaultActiveKey={["1"]}></Collapse>;
+  return (
+    <Collapse defaultActiveKey={["1", "4"]}>
+      {
+        collapseItems.map((item) => {
+          return (
+            <Collapse.Panel header={item.label} key={item.key}>
+              {item.children}
+            </Collapse.Panel>
+          );
+        })
+      }
+    </Collapse>
+  );
 };

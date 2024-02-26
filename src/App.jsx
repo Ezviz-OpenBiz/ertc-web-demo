@@ -4,10 +4,10 @@ import { Layout } from "antd";
 import Header from "./components/Header";
 import Core from "./views/core";
 import "./App.css";
+import 'antd/dist/antd.css';
 
 const { Content } = Layout;
 function App() {
-  const [count, setCount] = useState(0);
 
   return (
     <Layout className="app">

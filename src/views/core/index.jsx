@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ERTC from "ertc-web";
 import {
   Input,
@@ -10,20 +10,24 @@ import {
   Row,
   Col,
   Button,
-  Flex,
   Badge,
+  message,
+  Tooltip,
 } from "antd";
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import CollapseC from "./CollapseC";
 
 import "./index.less";
 
 export default function Core() {
+  const [messageApi, contextHolder] = message.useMessage();
   const [searchParams] = useSearchParams();
   const [ezrtc, setEzrtc] = useState(null); // EzRTC 实例
   const [logs, setLogs] = useState([]);
   const [hasMediaPermission, setHasMediaPermission] = useState(false);
   const [showLocalVideo, setShowLocalVideo] = useState(false);
+  const [loadingEnterRoom, setLoadingEnterRoom] = useState(false);
   const [roomState, setRoomState] = useState({
     accessToken: "",
     appId: "",
@@ -36,6 +40,11 @@ export default function Core() {
   const [profile, setProfile] = useState({}); // 视频参数
   const [remoteUsers, setRemoteUsers] = useState([]); // 远端用户
   const [localStream, setLocalStream] = useState(null); // 本地流
+  const [volumeList, setVolumeList] = useState([]); // 音量列表
+  const [qualityMap, setQualityMap] = useState({}); // 网络质量列表
+
+  const remoteUsersRef = useRef(null);
+  remoteUsersRef.current = remoteUsers; // 远端用户(ref)，避免闭包逻辑中的remoteUsers不是最新的
 
   // 获取媒体权限，页面加载时调用
   const getMediaPermission = () => {
@@ -49,6 +58,10 @@ export default function Core() {
       })
       .catch((err) => {
         console.log("err", err);
+        messageApi.open({
+          type: "error",
+          content: `获取媒体权限失败，请检查摄像头、麦克风是否被占用: ${err}`,
+        });
       });
   };
   // 添加日志
@@ -85,11 +98,15 @@ export default function Core() {
     });
   };
   // 改变远端用户属性
-  const changeRemoteUsersProp = (userId, prop) => {
-    const remoteUsersCopy = [...remoteUsers];
+  const changeRemoteUsersProp = (userId, prop, value) => {
+    const remoteUsersCopy = [...remoteUsersRef.current];
     remoteUsersCopy.forEach((item) => {
       if (item.userId === userId) {
-        item[prop] = !item[prop];
+        if (value) {
+          item[prop] = value;
+        } else {
+          item[prop] = !item[prop];
+        }
         // 大小流
         if (prop === "small") {
           ezrtc
@@ -101,7 +118,10 @@ export default function Core() {
                   : ERTC.STREAM_TYPE.VIDEO_ONLY,
             })
             .then((res) => {
-              addLog({ type: "success", label: `切换流成功：${json(res)}` });
+              addLog({
+                type: "success",
+                label: `切换到${item[prop] ? "小" : "大"}流成功：${json(res)}`,
+              });
             })
             .catch((err) => {
               addLog({ type: "error", label: `切换流失败：${json(err)}` });
@@ -140,6 +160,7 @@ export default function Core() {
    *  */
   // 加入房间
   const enterRoom = () => {
+    setLoadingEnterRoom(true);
     ezrtc
       .enterRoom({
         accessToken: roomState["accessToken"],
@@ -153,6 +174,9 @@ export default function Core() {
       })
       .catch((err) => {
         addLog({ type: "error", label: `加入房间失败：${json(err)}` });
+      })
+      .finally(() => {
+        setLoadingEnterRoom(false);
       });
   };
   // 离开房间
@@ -294,33 +318,44 @@ export default function Core() {
       };
       const fnLog = fn;
 
-      if (
-        [
-          ERTC.EVENT.AUDIOLEVEL,
-          ERTC.EVENT.USERS_CHANGE,
-          ERTC.EVENT.NETWORKQUALITY,
-        ].includes(value)
-      ) {
+      if ([ERTC.EVENT.USERS_CHANGE].includes(value)) {
         // 过滤掉一些事件,避免打印过多日志
         return;
       }
-      // // 音量
-      // if (value === ERTC.EVENT.AUDIOLEVEL) {
-      //   fn = (msg) => {
-      //     msg.clientList.forEach(item => {
-      //     });
-      //   }
-      // }
-
-      // // 视频旋转
-      // if (value === ERTC.EVENT.VIDEO_ROTATION) {
-      //   fn = (msg) => {
-      //     fnLog(msg)
-      //       const deg = msg.rotate;
-      //       let domVideo = document.getElementById(customId);
-      //       domVideo.style.transform = `rotate(${deg}deg)`;
-      //   }
-      // }
+      // 房间所有成员音量统计
+      if (value === ERTC.EVENT.AUDIOLEVEL) {
+        fn = (msg) => {
+          setVolumeList(msg.clientList);
+        };
+      }
+      // 房间其他成员网络质量统计
+      if (value === ERTC.EVENT.NETWORKQUALITY) {
+        fn = (msg) => {
+          setQualityMap((pre) => ({ ...pre, [msg.customId]: msg }));
+          // changeRemoteUsersProp(msg.customId, "quality", { upquality: msg['upquality'], downquality: msg['downquality'] })
+        };
+      }
+      // 视频旋转
+      if (value === ERTC.EVENT.VIDEO_ROTATION) {
+        fn = (msg) => {
+          fnLog(msg);
+          if (msg && msg.customId) {
+            const deg = msg.rotate;
+            let domVideo = document.getElementById(msg.customId);
+            domVideo.style.transform = `rotate(${deg}deg)`;
+            setRemoteUsers((pre) => {
+              const remoteUsersCopy = [...pre];
+              const index = remoteUsersCopy.findIndex(
+                (item) => item.userId === msg.customId
+              );
+              if (index > -1) {
+                remoteUsersCopy[index]["rotate"] = deg;
+              }
+              return remoteUsersCopy;
+            });
+          }
+        };
+      }
 
       // 监听错误
       if (value === ERTC.EVENT.ERROR) {
@@ -364,11 +399,27 @@ export default function Core() {
       if (value === ERTC.EVENT.STREAM_ADDED) {
         fn = (msg) => {
           fnLog(msg);
-          // 默认不自动订阅小流
+          const remoteUser =
+            remoteUsersRef.current.find(
+              (item) => item.userId === msg.customId
+            ) || {};
+
+          // 视频小流处理
           if (msg.streamtype === ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE) {
+            if (!remoteUser.small) {
+              // 如果之前没订阅过，则默认不订阅
+              return;
+            }
+          }
+          // 视频大流处理
+          if (
+            msg.streamType === ERTC.STREAM_TYPE.VIDEO_ONLY &&
+            remoteUser.small
+          ) {
+            // 如果之前订阅的小流，则不订阅大流（对端重连自动发布）
             return;
           }
-          // 自动订阅音频流、视频大流、屏幕共享流
+          // 自动订阅音频流、屏幕共享流、（视频大小流）
           rtc
             .subscribeStream({ userId: msg.customId, type: msg.streamtype })
             .then((res) => {
@@ -376,6 +427,16 @@ export default function Core() {
                 type: "success",
                 label: `自动订阅成功，用户：${msg.customId}，流类型：${msg.streamtype}`,
               });
+              // setRemoteUsers((pre) => {
+              //   const remoteUsersCopy = [...pre];
+              //   const index = remoteUsersCopy.findIndex(
+              //     (item) => item.userId === msg.customId
+              //   );
+              //   if (index > -1) {
+              //     remoteUsersCopy[index][msg.streamtype] = true;
+              //   }
+              //   return remoteUsersCopy;
+              // })
             })
             .catch((err) => {
               addLog({
@@ -392,7 +453,7 @@ export default function Core() {
         // ...
         fn = (msg) => {
           fnLog(msg);
-          // 默认不自动订阅小流
+          // 视频小流直接跳过，取消订阅大流默认会取消小流
           if (msg.streamtype === ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE) {
             return;
           }
@@ -465,7 +526,7 @@ export default function Core() {
           } else if (msg.message === "reconnecting now") {
             addLog({ type: "default", label: "websocket正在重连中" });
           } else if (msg.message === "reconnect failed") {
-            addLog({ type: "default", label: "websocket重连失败" });
+            addLog({ type: "error", label: "websocket重连失败" });
           } else if (msg.message === "janus destroyed") {
             addLog({ type: "default", label: "websocket连接断开" });
             // 每次连接断开后，清空远端用户列表
@@ -518,6 +579,7 @@ export default function Core() {
   const gutter = [16, 8];
   return (
     <div className="page-core">
+      {contextHolder}
       <div className="page-section">
         <CollapseC rtc={ezrtc} />
       </div>
@@ -565,7 +627,15 @@ export default function Core() {
       </div>
       <div className="page-section">
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Col span={24}>媒体：</Col>
+          <Col span={24}>
+            媒体
+            <Tooltip title="参数更改后，要重新加入房间才会生效">
+              <QuestionCircleOutlined
+                style={{ color: "#fa8c16", marginLeft: 5 }}
+              />
+            </Tooltip>
+            ：
+          </Col>
         </Row>
         <Row gutter={gutter}>
           <Col span={12}>
@@ -574,7 +644,7 @@ export default function Core() {
               <Select
                 style={{ flex: 1 }}
                 options={camerasList.map((item) => ({
-                  label: item.label,
+                  label: item.label || item.deviceId,
                   value: item.deviceId,
                 }))}
                 onChange={(value) => changeProfile("cameraId", value)}
@@ -587,7 +657,7 @@ export default function Core() {
               <Select
                 style={{ flex: 1 }}
                 options={microphonesList.map((item) => ({
-                  label: item.label,
+                  label: item.label || item.deviceId,
                   value: item.deviceId,
                 }))}
                 onChange={(value) => changeProfile("microphoneId", value)}
@@ -598,7 +668,15 @@ export default function Core() {
       </div>
       <div className="page-section">
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Col span={24}>视频设置：</Col>
+          <Col span={24}>
+            <span>视频设置</span>
+            <Tooltip title="参数更改后，要重新加入房间才会生效">
+              <QuestionCircleOutlined
+                style={{ color: "#fa8c16", marginLeft: 5 }}
+              />
+            </Tooltip>
+            ：
+          </Col>
         </Row>
         <Row gutter={gutter}>
           <Col span={4}>
@@ -651,17 +729,21 @@ export default function Core() {
           <Col span={24}>操作：</Col>
         </Row>
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Flex gap="small" wrap="wrap">
-            <Button type="primary" onClick={enterRoom}>
+          <Space gap="small" wrap="wrap">
+            <Button
+              type="primary"
+              loading={loadingEnterRoom}
+              onClick={enterRoom}
+            >
               加入房间
             </Button>
             <Button type="primary" onClick={leaveRoom}>
               离开房间
             </Button>
-          </Flex>
+          </Space>
         </Row>
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Flex gap="small" wrap="wrap">
+          <Space gap="small" wrap="wrap">
             <Button type="primary" onClick={startLocalVideo}>
               采集摄像头
             </Button>
@@ -674,10 +756,10 @@ export default function Core() {
             <Button type="primary" onClick={resumeLocalVideo}>
               恢复
             </Button>
-          </Flex>
+          </Space>
         </Row>
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Flex gap="small" wrap="wrap">
+          <Space>
             <Button type="primary" onClick={startLocalAudio}>
               采集麦克风
             </Button>
@@ -690,27 +772,27 @@ export default function Core() {
             <Button type="primary" onClick={resumeLocalAudio}>
               恢复
             </Button>
-          </Flex>
+          </Space>
         </Row>
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Flex gap="small" wrap="wrap">
+          <Space gap="small" wrap="wrap">
             <Button type="primary" onClick={startScreenShare}>
               开启屏幕共享
             </Button>
             <Button type="primary" onClick={stopScreenShare}>
               关闭屏幕共享
             </Button>
-          </Flex>
+          </Space>
         </Row>
       </div>
 
       {/* 日志 */}
       <div className="page-section">
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Flex style={{ width: "100%" }} justify="space-between">
+          <Row style={{ width: "100%" }} justify="space-between">
             <div>日志：</div>
             <Button onClick={clearLogs}>清除日志</Button>
-          </Flex>
+          </Row>
           <div className="logs">
             {logs.map((log, index) => (
               <div key={index}>
@@ -739,44 +821,90 @@ export default function Core() {
           </Col>
         </Row>
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Flex style={{ width: "100%" }} gap="large" wrap="wrap">
+          <Col span={24} lg={12}>
             <div className="user-play">
               <div>用户：</div>
-              <Flex gap="small" wrap="wrap">
+              <Row gutter={gutter} style={{ marginBottom: 10 }}>
                 {showLocalVideo && (
-                  <div>
-                    <div>本地：</div>
+                  <Col>
+                    <div>本地用户（{roomState.userId}）：</div>
+                    <div>
+                      音量：
+                      {volumeList?.find(
+                        (volume) => volume.customId === roomState.userId
+                      )?.audioleve || null}
+                    </div>
                     <video
                       id="local-video"
                       controls
                       style={{ width: 300, height: 200 }}
                     ></video>
-                  </div>
+                  </Col>
                 )}
                 {remoteUsers.map((item, index) => {
                   return (
-                    <div key={item.userId}>
-                      <div>{item.userId}：</div>
-                      <video
-                        id={item.userId}
-                        controls
-                        style={{ width: 300, height: 200 }}
-                      ></video>
+                    <Col key={item.userId}>
                       <div>
-                        <Button
-                          type="primary"
-                          onClick={() =>
-                            changeRemoteUsersProp(item.userId, "small")
-                          }
-                        >
-                          切换到{item.small === true ? "大流" : "小流"}
-                        </Button>
+                        <div>{item.userId}：</div>
+                        <div style={{ display: "flex" }}>
+                          <div style={{ flex: 1 }}>
+                            音量：
+                            {volumeList?.find(
+                              (volume) => volume.customId === item.userId
+                            )?.audioleve || null}
+                          </div>
+                          <div>
+                            网络：上行=
+                            {qualityMap[item.userId]?.upquality || 0}
+                            ，下行=
+                            {qualityMap[item.userId]?.downquality || 0}
+                          </div>
+                        </div>
+                        <video
+                          id={item.userId}
+                          controls
+                          style={{
+                            width: 300,
+                            height: 200,
+                            transform: `rotate(${item.rotate || 0}deg)`,
+                          }}
+                        ></video>
+                        <div>
+                          <Button
+                            type="primary"
+                            style={{ marginRight: 10 }}
+                            onClick={() =>
+                              changeRemoteUsersProp(item.userId, "small")
+                            }
+                          >
+                            切换到{item.small === true ? "大流" : "小流"}
+                          </Button>
+                          {/* <Button
+                        type="primary"
+                        style={{ marginRight: 10 }}
+                        onClick={() =>
+                          changeRemoteUsersProp(item.userId, "video")
+                        }
+                      >
+                        {item.video === true ? "取消" : "订阅"}视频
+                      </Button>
+                      <Button
+                        type="primary"
+                        onClick={() =>
+                          changeRemoteUsersProp(item.userId, "audio")
+                        }
+                      >
+                        {item.audio === true ? "取消" : "订阅"}音频
+                      </Button> */}
+                        </div>
                       </div>
-                    </div>
+                    </Col>
                   );
                 })}
-              </Flex>
+              </Row>
             </div>
+          </Col>
+          <Col span={24} lg={12}>
             <div className="screen-play">
               <div>屏幕：</div>
               {remoteUsers?.length > 0 && (
@@ -786,7 +914,7 @@ export default function Core() {
                 ></video>
               )}
             </div>
-          </Flex>
+          </Col>
         </Row>
       </div>
     </div>
