@@ -29,11 +29,11 @@ export default function Core() {
   const [showLocalVideo, setShowLocalVideo] = useState(false);
   const [loadingEnterRoom, setLoadingEnterRoom] = useState(false);
   const [roomState, setRoomState] = useState({
-    accessToken: "",
+    accessToken:
+      "",
     appId: "",
     roomId: "",
     userId: "",
-    rtctoken: "",
   });
   const [camerasList, setCamerasList] = useState([]);
   const [microphonesList, setMicrophonesList] = useState([]);
@@ -49,7 +49,10 @@ export default function Core() {
   // 获取媒体权限，页面加载时调用
   const getMediaPermission = () => {
     navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
+      .getUserMedia({
+        video: true,
+        audio: true,
+      })
       .then((stream) => {
         stream.getTracks().forEach((track) => {
           track.stop();
@@ -82,6 +85,10 @@ export default function Core() {
       ? JSON.stringify(arg)
       : arg;
   };
+  // 导出全量日志
+  const exportLogs = () => {
+    ERTC_WEB.exportLogs()
+  }
 
   // 改变房间参数
   const changeRoomState = (target, value) => {
@@ -100,7 +107,7 @@ export default function Core() {
   // 改变远端用户属性
   const changeRemoteUsersProp = (userId, prop, value) => {
     const remoteUsersCopy = [...remoteUsersRef.current];
-    remoteUsersCopy.forEach((item) => {
+    remoteUsersCopy.forEach(async (item) => {
       if (item.userId === userId) {
         if (value) {
           item[prop] = value;
@@ -109,41 +116,40 @@ export default function Core() {
         }
         // 大小流
         if (prop === "small") {
-          ezrtc
-            .subscribeStream({
-              userId: item.userId,
-              type:
-                item.small === true
-                  ? ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE
-                  : ERTC.STREAM_TYPE.VIDEO_ONLY,
-            })
-            .then((res) => {
-              addLog({
-                type: "success",
-                label: `切换到${item[prop] ? "小" : "大"}流成功：${json(res)}`,
-              });
-            })
-            .catch((err) => {
-              addLog({ type: "error", label: `切换流失败：${json(err)}` });
+          const res = await ezrtc.subscribeStream({
+            userId: item.userId,
+            type:
+              item.small === true
+                ? ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE
+                : ERTC.STREAM_TYPE.VIDEO_ONLY,
+          });
+          if (res.code === 0) {
+            addLog({
+              type: "success",
+              label: `切换到${item[prop] ? "小" : "大"}流成功：${json(res)}`,
             });
+          } else {
+            addLog({ type: "error", label: `切换流失败：${json(res)}` });
+          }
         }
       }
     });
     setRemoteUsers(remoteUsersCopy);
   };
   // 获取摄像头列表
-  const getCamerasList = () => {
-    ezrtc.getCamerasList().then((list) => {
-      console.log("摄像头列表", list);
-      setCamerasList(list || []);
-    });
+  const getCamerasList = async () => {
+    const res = await ezrtc.getCamerasList();
+    if (res.code === 0) {
+      console.log("摄像头列表", res.data);
+      setCamerasList(res.data || []);
+    }
   };
   // 获取麦克风列表
-  const getMicrophonesList = () => {
-    ezrtc.getMicrophonesList().then((list) => {
-      console.log("麦克风列表", list);
-
-      const listFilter = list.reduce((acc, current) => {
+  const getMicrophonesList = async () => {
+    const res = await ezrtc.getMicrophonesList();
+    if (res.code === 0) {
+      console.log("麦克风列表", res.data);
+      const listFilter = res.data.reduce((acc, current) => {
         const x = acc.find((item) => item.groupId === current.groupId);
         if (!x) {
           return acc.concat([current]);
@@ -152,155 +158,130 @@ export default function Core() {
         }
       }, []);
       setMicrophonesList(listFilter || []);
-    });
+    }
   };
 
   /**
    * api
    *  */
   // 加入房间
-  const enterRoom = () => {
+  const enterRoom = async () => {
     setLoadingEnterRoom(true);
-    ezrtc
-      .enterRoom({
-        accessToken: roomState["accessToken"],
-        appId: roomState["appId"],
-        roomId: roomState["roomId"],
-        userId: roomState["userId"],
-        rtctoken: roomState["rtctoken"],
-      })
-      .then((res) => {
-        addLog({ type: "success", label: `加入房间成功：${res}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `加入房间失败：${json(err)}` });
-      })
-      .finally(() => {
-        setLoadingEnterRoom(false);
-      });
+    const res = await ezrtc.enterRoom({
+      accessToken: roomState["accessToken"],
+      appId: roomState["appId"],
+      roomId: roomState["roomId"],
+      userId: roomState["userId"]
+    });
+    if (res.code === 0) {
+      addLog({ type: "success", label: `加入房间成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `加入房间失败：${json(res)}` });
+    }
+    setLoadingEnterRoom(false);
   };
   // 离开房间
-  const leaveRoom = () => {
-    ezrtc
-      .leaveRoom()
-      .then((res) => {
-        addLog({ type: "success", label: `离开房间成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `离开房间失败：${json(err)}` });
-      });
+  const leaveRoom = async () => {
+    const res = await ezrtc.leaveRoom();
+    if (res.code === 0) {
+      addLog({ type: "success", label: `离开房间成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `离开房间失败：${json(res)}` });
+    }
   };
   // 采集摄像头
-  const startLocalVideo = () => {
-    ezrtc
-      .startLocalVideo()
-      .then((res) => {
-        addLog({ type: "success", label: `采集摄像头成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `采集摄像头失败：${json(err)}` });
-      });
+  const startLocalVideo = async () => {
+    const res = await ezrtc.startLocalVideo();
+    if (res.code === 0) {
+      const videoSettings = ezrtc.getVideoSettingParams()
+      addLog({ type: "success", label: `采集摄像头成功：${json(res)}，是否开启大小流：${videoSettings.simulcast ? '是' : '否'}` });
+    } else {
+      addLog({ type: "error", label: `采集摄像头失败：${json(res)}` });
+    }
   };
   // 关闭摄像头
-  const stopLocalVideo = () => {
-    ezrtc
-      .stopLocalVideo()
-      .then((res) => {
-        addLog({ type: "success", label: `关闭摄像头成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `关闭摄像头失败：${json(err)}` });
-      });
+  const stopLocalVideo = async () => {
+    const res = await ezrtc.stopLocalVideo();
+    if (res.code === 0) {
+      addLog({ type: "success", label: `关闭摄像头成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `关闭摄像头失败：${json(res)}` });
+    }
   };
   // 暂停摄像头
-  const pauseLocalVideo = () => {
-    ezrtc
-      .pauseLocalVideo()
-      .then((res) => {
-        addLog({ type: "success", label: `暂停摄像头成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `暂停摄像头失败：${json(err)}` });
-      });
+  const pauseLocalVideo = async () => {
+    const res = await ezrtc.pauseLocalVideo();
+    if (res.code === 0) {
+      addLog({ type: "success", label: `暂停摄像头成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `暂停摄像头失败：${json(res)}` });
+    }
   };
   // 恢复摄像头
-  const resumeLocalVideo = () => {
-    ezrtc
-      .resumeLocalVideo()
-      .then((res) => {
-        addLog({ type: "success", label: `恢复摄像头成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `恢复摄像头失败：${json(err)}` });
-      });
+  const resumeLocalVideo = async () => {
+    const res = await ezrtc.resumeLocalVideo();
+    if (res.code === 0) {
+      addLog({ type: "success", label: `恢复摄像头成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `恢复摄像头失败：${json(res)}` });
+    }
   };
 
   // 采集麦克风
-  const startLocalAudio = () => {
-    ezrtc
-      .startLocalAudio()
-      .then((res) => {
-        addLog({ type: "success", label: `采集麦克风成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `采集麦克风失败：${json(err)}` });
-      });
+  const startLocalAudio = async () => {
+    const res = await ezrtc.startLocalAudio();
+    if (res.code === 0) {
+      addLog({ type: "success", label: `采集麦克风成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `采集麦克风失败：${json(res)}` });
+    }
   };
   // 关闭麦克风
-  const stopLocalAudio = () => {
-    ezrtc
-      .stopLocalAudio()
-      .then((res) => {
-        addLog({ type: "success", label: `关闭麦克风成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `关闭麦克风失败：${json(err)}` });
-      });
+  const stopLocalAudio = async () => {
+    const res = await ezrtc.stopLocalAudio();
+    if (res.code === 0) {
+      addLog({ type: "success", label: `关闭麦克风成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `关闭麦克风失败：${json(res)}` });
+    }
   };
   // 暂停麦克风
-  const pauseLocalAudio = () => {
-    ezrtc
-      .pauseLocalAudio()
-      .then((res) => {
-        addLog({ type: "success", label: `暂停麦克风成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `暂停麦克风失败：${json(err)}` });
-      });
+  const pauseLocalAudio = async () => {
+    const res = await ezrtc.pauseLocalAudio();
+    if (res.code === 0) {
+      addLog({ type: "success", label: `暂停麦克风成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `暂停麦克风失败：${json(res)}` });
+    }
   };
   // 恢复麦克风
-  const resumeLocalAudio = () => {
-    ezrtc
-      .resumeLocalAudio()
-      .then((res) => {
-        addLog({ type: "success", label: `恢复麦克风成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `恢复麦克风失败：${json(err)}` });
-      });
+  const resumeLocalAudio = async () => {
+    const res = await ezrtc.resumeLocalAudio();
+    if (res.code === 0) {
+      addLog({ type: "success", label: `恢复麦克风成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `恢复麦克风失败：${json(res)}` });
+    }
   };
 
   // 开启屏幕共享
-  const startScreenShare = () => {
-    ezrtc
-      .startScreenShare()
-      .then((res) => {
-        addLog({ type: "success", label: `开启屏幕共享成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `开启屏幕共享失败：${json(err)}` });
-      });
+  const startScreenShare = async () => {
+    const res = await ezrtc.startScreenShare()
+    if (res.code === 0) {
+      addLog({ type: "success", label: `开启屏幕共享成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `开启屏幕共享失败：${json(res)}` });
+    }
   };
   // 关闭屏幕共享
-  const stopScreenShare = () => {
-    ezrtc
+  const stopScreenShare = async () => {
+    const res = await ezrtc
       .stopScreenShare()
-      .then((res) => {
-        addLog({ type: "success", label: `关闭屏幕共享成功：${json(res)}` });
-      })
-      .catch((err) => {
-        addLog({ type: "error", label: `关闭屏幕共享失败：${json(err)}` });
-      });
+    if (res.code === 0) {
+      addLog({ type: "success", label: `关闭屏幕共享成功：${json(res)}` });
+    } else {
+      addLog({ type: "error", label: `关闭屏幕共享失败：${json(res)}` });
+    }
   };
 
   // 设置配置信息
@@ -397,7 +378,7 @@ export default function Core() {
 
       // 远端流添加
       if (value === ERTC.EVENT.STREAM_ADDED) {
-        fn = (msg) => {
+        fn = async (msg) => {
           fnLog(msg);
           const remoteUser =
             remoteUsersRef.current.find(
@@ -420,60 +401,46 @@ export default function Core() {
             return;
           }
           // 自动订阅音频流、屏幕共享流、（视频大小流）
-          rtc
-            .subscribeStream({ userId: msg.customId, type: msg.streamtype })
-            .then((res) => {
-              addLog({
-                type: "success",
-                label: `自动订阅成功，用户：${msg.customId}，流类型：${msg.streamtype}`,
-              });
-              // setRemoteUsers((pre) => {
-              //   const remoteUsersCopy = [...pre];
-              //   const index = remoteUsersCopy.findIndex(
-              //     (item) => item.userId === msg.customId
-              //   );
-              //   if (index > -1) {
-              //     remoteUsersCopy[index][msg.streamtype] = true;
-              //   }
-              //   return remoteUsersCopy;
-              // })
-            })
-            .catch((err) => {
-              addLog({
-                type: "error",
-                label: `自动订阅失败，用户：${msg.customId}，流类型：${
-                  msg.streamtype
-                }，原因：${json(err)}`,
-              });
+          const res = await rtc.subscribeStream({ userId: msg.customId, type: msg.streamtype })
+          if (res.code === 0) {
+            addLog({
+              type: "success",
+              label: `自动订阅成功，用户：${msg.customId}，流类型：${msg.streamtype}`,
             });
+          } else {
+            addLog({
+              type: "error",
+              label: `自动订阅失败，用户：${msg.customId}，流类型：${
+                msg.streamtype
+              }，原因：${json(res)}`,
+            });
+          }
         };
       }
       // 远端流删除
       if (value === ERTC.EVENT.STREAM_REMOVED) {
         // ...
-        fn = (msg) => {
+        fn = async (msg) => {
           fnLog(msg);
           // 视频小流直接跳过，取消订阅大流默认会取消小流
           if (msg.streamtype === ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE) {
             return;
           }
           // 取消订阅音频流、视频大流、屏幕共享流
-          rtc
-            .unsubscribe({ userId: msg.customId, type: msg.streamtype })
-            .then((res) => {
-              addLog({
-                type: "success",
-                label: `取消订阅成功，用户：${msg.customId}，流类型：${msg.streamtype}`,
-              });
-            })
-            .catch((err) => {
-              addLog({
-                type: "error",
-                label: `取消订阅失败，用户：${msg.customId}，流类型：${
-                  msg.streamtype
-                }，原因：${json(err)}`,
-              });
+          const res = await rtc.unsubscribe({ userId: msg.customId, type: msg.streamtype })
+          if (res.code === 0) {
+            addLog({
+              type: "success",
+              label: `取消订阅成功，用户：${msg.customId}，流类型：${msg.streamtype}`,
             });
+          } else {
+            addLog({
+              type: "error",
+              label: `取消订阅失败，用户：${msg.customId}，流类型：${
+                msg.streamtype
+              }，原因：${json(res)}`,
+            });
+          }
         };
       }
 
@@ -483,34 +450,31 @@ export default function Core() {
           const videoStream =
             streamType === ERTC.STREAM_TYPE.SCREEN ? null : stream;
 
-          videoStream &&
-            setLocalStream((pre) => ({ stream, refresh: !pre?.refresh })); // 由于react，useEffect不会检测到stream中音视频轨道数量的变化，所以需要加一个refresh字段
+          videoStream && setLocalStream((pre) => ({ stream, refresh: !pre?.refresh })); // 由于react，useEffect不会检测到stream中音视频轨道数量的变化，所以需要加一个refresh字段
           addLog({ type: "default", label: "获取到本地流" });
         };
       }
 
       // 获取到远端流
       if (value === ERTC.EVENT.REMOTE_STREAM_AVAILABLE) {
-        fn = (msg) => {
+        fn = async (msg) => {
           if (msg.stream) {
             if (msg.streamType === ERTC.STREAM_TYPE.SCREEN) {
-              rtc
-                .playStream({ domId: "remote-screen", stream: msg.stream })
-                .then((info) => {
-                  addLog({
-                    type: "default",
-                    label: `获取到${msg.userId}的远端屏幕共享流`,
-                  });
+              const res = await rtc.playStream({ domId: "remote-screen", stream: msg.stream })
+              if (res.code === 0) {
+                addLog({
+                  type: "default",
+                  label: `获取到${msg.userId}的远端屏幕共享流`,
                 });
+              }
             } else {
-              rtc
-                .playStream({ domId: msg.userId, stream: msg.stream })
-                .then((info) => {
-                  addLog({
-                    type: "default",
-                    label: `获取到${msg.userId}的远端音视频流`,
-                  });
+              const res = await rtc.playStream({ domId: msg.userId, stream: msg.stream })
+              if (res.code === 0) {
+                addLog({
+                  type: "default",
+                  label: `获取到${msg.userId}的远端音视频流`,
                 });
+              }
             }
           }
         };
@@ -520,15 +484,15 @@ export default function Core() {
       if (value === ERTC.EVENT.CONNECT_STATE_CHANGE) {
         fn = (msg) => {
           if (msg.code === 0) {
-            addLog({ type: "default", label: "websocket连接成功" });
+            addLog({ type: "success", label: "sdk连接成功" });
             // 每次连接成功后，清空远端用户列表
             setRemoteUsers([]);
-          } else if (msg.message === "reconnecting now") {
-            addLog({ type: "default", label: "websocket正在重连中" });
-          } else if (msg.message === "reconnect failed") {
-            addLog({ type: "error", label: "websocket重连失败" });
-          } else if (msg.message === "janus destroyed") {
-            addLog({ type: "default", label: "websocket连接断开" });
+          } else if (msg.msg === "reconnecting") {
+            addLog({ type: "default", label: "sdk正在重连中" });
+          } else if (msg.msg === "fail") {
+            addLog({ type: "error", label: "sdk重连失败" });
+          } else if (msg.msg === "destroyed") {
+            addLog({ type: "error", label: "sdk连接断开" });
             // 每次连接断开后，清空远端用户列表
             setRemoteUsers([]);
           }
@@ -545,8 +509,10 @@ export default function Core() {
   useEffect(() => {
     const env = searchParams.get("env"); // 从url中获取env参数，用于项目中切换环境，开发者接入可以忽略
     const domain = searchParams.get("domain"); // url中获取domain参数，用于项目中切换域名，开发者接入可以忽略
+    const logsExport = searchParams.get("logsExport"); // url中获取export参数，用于项目中切换日志导出，开发者接入可以忽略
     const ertcSettings = {
       debug: true,
+      logsExport: logsExport === '0' ? false : true,
       domain: domain
         ? decodeURIComponent(domain)
         : env === "dev"
@@ -590,7 +556,7 @@ export default function Core() {
         <Row gutter={gutter}>
           <Col span={12}>
             <Input
-              addonBefore="accessToken"
+              addonBefore="资源token"
               value={roomState["accessToken"]}
               onChange={(e) => changeRoomState("accessToken", e.target.value)}
             />
@@ -614,13 +580,6 @@ export default function Core() {
               addonBefore="userId"
               value={roomState["userId"]}
               onChange={(e) => changeRoomState("userId", e.target.value)}
-            />
-          </Col>
-          <Col span={12}>
-            <Input
-              addonBefore="rtctoken"
-              value={roomState["rtctoken"]}
-              onChange={(e) => changeRoomState("rtctoken", e.target.value)}
             />
           </Col>
         </Row>
@@ -789,8 +748,9 @@ export default function Core() {
       {/* 日志 */}
       <div className="page-section">
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
-          <Row style={{ width: "100%" }} justify="space-between">
-            <div>日志：</div>
+          <Row style={{ width: "100%" }}>
+            <div style={{ flex: 1 }}>日志：</div>
+            <Button onClick={exportLogs} type="primary" style={{ marginRight: 16 }}>导出控制台日志</Button>
             <Button onClick={clearLogs}>清除日志</Button>
           </Row>
           <div className="logs">

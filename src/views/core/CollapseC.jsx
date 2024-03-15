@@ -130,10 +130,10 @@ export default (props) => {
           <BadgeNode text="点击左侧菜单【云通话】- 【实时音视频】，复制 AppID 填入输入框">
             <img src={imgStep_3_2} style={{ width: 700 }} />
           </BadgeNode>
-          <BadgeNode text="点击左侧菜单【账号中心】- 【应用信息】，复制 accessToken 填入输入框">
+          {/* <BadgeNode text="点击左侧菜单【账号中心】- 【应用信息】，复制 accessToken 填入输入框">
             <img src={imgStep_3_1} style={{ width: 700 }} />
-          </BadgeNode>
-          <BadgeNode text="获取 RTCToken 填入输入框">
+          </BadgeNode> */}
+          <BadgeNode text="获取 资源访问token 填入输入框">
             <span>
               由开发者云办法给终端使用，可参考
               <a target="_blank" href="https://open.ys7.com/help/1873">
