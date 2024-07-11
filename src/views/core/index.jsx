@@ -48,24 +48,53 @@ export default function Core() {
 
   // 获取媒体权限，页面加载时调用
   const getMediaPermission = () => {
-    navigator.mediaDevices
-      .getUserMedia({
-        video: true,
-        audio: true,
-      })
-      .then((stream) => {
-        stream.getTracks().forEach((track) => {
-          track.stop();
-        });
+    Promise.allSettled([getCameraPermission(), getMicrophonePermission()]).then(
+      () => {
         setHasMediaPermission(true);
-      })
-      .catch((err) => {
-        console.log("err", err);
-        messageApi.open({
-          type: "error",
-          content: `获取媒体权限失败，请检查摄像头、麦克风是否被占用: ${err}`,
+      }
+    );
+  };
+  // 询问摄像头权限
+  const getCameraPermission = async () => {
+    return new Promise((resolve, reject) => {
+      navigator.mediaDevices
+        .getUserMedia({ video: true })
+        .then((stream) => {
+          stream.getTracks().forEach((track) => {
+            track.stop();
+          });
+          resolve();
+        })
+        .catch((err) => {
+          console.log("err", err);
+          messageApi.open({
+            type: "error",
+            content: `获取媒体权限失败，请检查摄像头是否被占用: ${err}`,
+          });
+          reject(err);
         });
-      });
+    });
+  };
+  // 询问麦克风权限
+  const getMicrophonePermission = async () => {
+    return new Promise((resolve, reject) => {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          stream.getTracks().forEach((track) => {
+            track.stop();
+          });
+          resolve();
+        })
+        .catch((err) => {
+          console.log("err", err);
+          messageApi.open({
+            type: "error",
+            content: `获取媒体权限失败，请检查麦克风是否被占用: ${err}`,
+          });
+          reject(err);
+        });
+    });
   };
   // 添加日志
   const addLog = (log) => {
@@ -87,8 +116,8 @@ export default function Core() {
   };
   // 导出全量日志
   const exportLogs = () => {
-    ERTC_WEB.exportLogs()
-  }
+    ERTC_WEB.exportLogs();
+  };
 
   // 改变房间参数
   const changeRoomState = (target, value) => {
@@ -105,7 +134,7 @@ export default function Core() {
     });
   };
   // 改变远端用户属性
-  const changeRemoteUsersProp = (userId, prop, value) => {
+  const changeRemoteUsersProp = (userId, prop, value, updateStream = true) => {
     const remoteUsersCopy = [...remoteUsersRef.current];
     remoteUsersCopy.forEach(async (item) => {
       if (item.userId === userId) {
@@ -114,23 +143,62 @@ export default function Core() {
         } else {
           item[prop] = !item[prop];
         }
-        // 大小流
-        if (prop === "small") {
-          const res = await ezrtc.subscribeStream({
-            userId: item.userId,
-            type:
-              item.small === true
-                ? ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE
-                : ERTC.STREAM_TYPE.VIDEO_ONLY,
-          });
-          if (res.code === 0) {
-            addLog({
-              type: "success",
-              label: `切换到${item[prop] ? "小" : "大"}流成功：${json(res)}`,
+        if (updateStream) {
+          // 大小流
+          if (prop === "small") {
+            const res = await ezrtc.subscribeStream({
+              userId: item.userId,
+              type:
+                item.small === true
+                  ? ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE
+                  : ERTC.STREAM_TYPE.VIDEO_ONLY,
+              view: item.userId
             });
-          } else {
-            addLog({ type: "error", label: `切换流失败：${json(res)}` });
+            if (res.code === 0) {
+              addLog({
+                type: "success",
+                label: `切换到${item[prop] ? "小" : "大"}流成功：${json(res)}`,
+              });
+            } else {
+              addLog({ type: "error", label: `切换流失败：${json(res)}` });
+            }
           }
+          // 视频流
+          if (prop === "video") {
+            const res = await ezrtc[item[prop] ? 'subscribeStream' : 'unsubscribe']({
+              userId: item.userId,
+              type:
+                item.small === true
+                  ? ERTC.STREAM_TYPE.VIDEO_SIMULCAST_LITTLE
+                  : ERTC.STREAM_TYPE.VIDEO_ONLY,
+              view: item.userId
+            });
+            if (res.code === 0) {
+              addLog({
+                type: "success",
+                label: `${item[prop] ? "订阅" : "取消订阅"}流成功：${json(res)}`,
+              });
+            } else {
+              addLog({ type: "error", label:`${item[prop] ? "订阅" : "取消订阅"}流失败：${json(res)}` });
+            }
+          }
+          // 音频流
+          if (prop === "audio") {
+            const res = await ezrtc[item[prop] ? 'subscribeStream' : 'unsubscribe']({
+              userId: item.userId,
+              type: ERTC.STREAM_TYPE.AUDIO_ONLY,
+              view: item.userId
+            });
+            if (res.code === 0) {
+              addLog({
+                type: "success",
+                label: `${item[prop] ? "订阅" : "取消订阅"}流成功：${json(res)}`,
+              });
+            } else {
+              addLog({ type: "error", label:`${item[prop] ? "订阅" : "取消订阅"}流失败：${json(res)}` });
+            }
+          }
+
         }
       }
     });
@@ -141,7 +209,8 @@ export default function Core() {
     const res = await ezrtc.getCamerasList();
     if (res.code === 0) {
       console.log("摄像头列表", res.data);
-      setCamerasList(res.data || []);
+      const list = res.data || [];
+      setCamerasList(list.filter((item) => item.deviceId));
     }
   };
   // 获取麦克风列表
@@ -157,7 +226,7 @@ export default function Core() {
           return acc;
         }
       }, []);
-      setMicrophonesList(listFilter || []);
+      setMicrophonesList(listFilter.filter((item) => item.deviceId));
     }
   };
 
@@ -171,7 +240,7 @@ export default function Core() {
       accessToken: roomState["accessToken"],
       appId: roomState["appId"],
       roomId: roomState["roomId"],
-      userId: roomState["userId"]
+      userId: roomState["userId"],
     });
     if (res.code === 0) {
       addLog({ type: "success", label: `加入房间成功：${json(res)}` });
@@ -193,8 +262,13 @@ export default function Core() {
   const startLocalVideo = async () => {
     const res = await ezrtc.startLocalVideo();
     if (res.code === 0) {
-      const videoSettings = ezrtc.getVideoSettingParams()
-      addLog({ type: "success", label: `采集摄像头成功：${json(res)}，是否开启大小流：${videoSettings.simulcast ? '是' : '否'}` });
+      const videoSettings = ezrtc.getVideoSettingParams();
+      addLog({
+        type: "success",
+        label: `采集摄像头成功：${json(res)}，是否开启大小流：${
+          videoSettings.simulcast ? "是" : "否"
+        }`,
+      });
     } else {
       addLog({ type: "error", label: `采集摄像头失败：${json(res)}` });
     }
@@ -266,7 +340,7 @@ export default function Core() {
 
   // 开启屏幕共享
   const startScreenShare = async () => {
-    const res = await ezrtc.startScreenShare()
+    const res = await ezrtc.startScreenShare();
     if (res.code === 0) {
       addLog({ type: "success", label: `开启屏幕共享成功：${json(res)}` });
     } else {
@@ -275,8 +349,7 @@ export default function Core() {
   };
   // 关闭屏幕共享
   const stopScreenShare = async () => {
-    const res = await ezrtc
-      .stopScreenShare()
+    const res = await ezrtc.stopScreenShare();
     if (res.code === 0) {
       addLog({ type: "success", label: `关闭屏幕共享成功：${json(res)}` });
     } else {
@@ -299,7 +372,13 @@ export default function Core() {
       };
       const fnLog = fn;
 
-      if ([ERTC.EVENT.USERS_CHANGE].includes(value)) {
+      if (
+        [
+          ERTC.EVENT.USERS_CHANGE,
+          ERTC.EVENT.REPORT_NETWORK_QUALITY,
+          ERTC.EVENT.REMOTE_STREAM_AVAILABLE,
+        ].includes(value)
+      ) {
         // 过滤掉一些事件,避免打印过多日志
         return;
       }
@@ -346,7 +425,7 @@ export default function Core() {
       }
 
       // 网络质量上报
-      if (value === ERTC.EVENT.REPORT_NETWORK_QUALITY) {
+      if (value === ERTC.EVENT.REPORT_NETWORK_QUALITY_CHANGE) {
         fn = ({ uplink, downlink }) => {
           addLog({
             type: "default",
@@ -401,12 +480,26 @@ export default function Core() {
             return;
           }
           // 自动订阅音频流、屏幕共享流、（视频大小流）
-          const res = await rtc.subscribeStream({ userId: msg.customId, type: msg.streamtype })
+          console.log("msg.streamType", msg.streamtype);
+          const res = await rtc.subscribeStream({
+            userId: msg.customId,
+            type: msg.streamtype,
+            view:
+              msg.streamtype === ERTC.STREAM_TYPE.SCREEN
+                ? "remote-screen"
+                : msg.customId,
+          });
           if (res.code === 0) {
             addLog({
               type: "success",
               label: `自动订阅成功，用户：${msg.customId}，流类型：${msg.streamtype}`,
             });
+            if (msg.streamtype === ERTC.STREAM_TYPE.VIDEO_ONLY) {
+              changeRemoteUsersProp(msg.customId, 'video', true, false)
+            }
+            if (msg.streamtype === ERTC.STREAM_TYPE.AUDIO_ONLY) {
+              changeRemoteUsersProp(msg.customId, 'audio', true, false)
+            }
           } else {
             addLog({
               type: "error",
@@ -427,7 +520,10 @@ export default function Core() {
             return;
           }
           // 取消订阅音频流、视频大流、屏幕共享流
-          const res = await rtc.unsubscribe({ userId: msg.customId, type: msg.streamtype })
+          const res = await rtc.unsubscribe({
+            userId: msg.customId,
+            type: msg.streamtype,
+          });
           if (res.code === 0) {
             addLog({
               type: "success",
@@ -450,33 +546,9 @@ export default function Core() {
           const videoStream =
             streamType === ERTC.STREAM_TYPE.SCREEN ? null : stream;
 
-          videoStream && setLocalStream((pre) => ({ stream, refresh: !pre?.refresh })); // 由于react，useEffect不会检测到stream中音视频轨道数量的变化，所以需要加一个refresh字段
+          videoStream &&
+            setLocalStream((pre) => ({ stream, refresh: !pre?.refresh })); // 由于react，useEffect不会检测到stream中音视频轨道数量的变化，所以需要加一个refresh字段
           addLog({ type: "default", label: "获取到本地流" });
-        };
-      }
-
-      // 获取到远端流
-      if (value === ERTC.EVENT.REMOTE_STREAM_AVAILABLE) {
-        fn = async (msg) => {
-          if (msg.stream) {
-            if (msg.streamType === ERTC.STREAM_TYPE.SCREEN) {
-              const res = await rtc.playStream({ domId: "remote-screen", stream: msg.stream })
-              if (res.code === 0) {
-                addLog({
-                  type: "default",
-                  label: `获取到${msg.userId}的远端屏幕共享流`,
-                });
-              }
-            } else {
-              const res = await rtc.playStream({ domId: msg.userId, stream: msg.stream })
-              if (res.code === 0) {
-                addLog({
-                  type: "default",
-                  label: `获取到${msg.userId}的远端音视频流`,
-                });
-              }
-            }
-          }
         };
       }
 
@@ -509,10 +581,10 @@ export default function Core() {
   useEffect(() => {
     const env = searchParams.get("env"); // 从url中获取env参数，用于项目中切换环境，开发者接入可以忽略
     const domain = searchParams.get("domain"); // url中获取domain参数，用于项目中切换域名，开发者接入可以忽略
-    const logsExport = searchParams.get("logsExport"); // url中获取export参数，用于项目中切换日志导出，开发者接入可以忽略
+    const exportLogs = searchParams.get("exportLogs"); // url中获取export参数，用于项目中切换日志导出，开发者接入可以忽略
     const ertcSettings = {
       debug: true,
-      logsExport: logsExport === '0' ? false : true,
+      exportLogs: exportLogs === "0" ? false : true,
       domain: domain
         ? decodeURIComponent(domain)
         : env === "dev"
@@ -681,6 +753,64 @@ export default function Core() {
           </Col>
         </Row>
       </div>
+      <div className="page-section">
+        <Row gutter={gutter} style={{ marginBottom: 10 }}>
+          <Col span={24}>
+            <span>音频设置</span>
+            {/* <Tooltip title="参数更改后，要重新加入房间才会生效">
+              <QuestionCircleOutlined
+                style={{ color: "#fa8c16", marginLeft: 5 }}
+              />
+            </Tooltip> */}
+            ：
+          </Col>
+        </Row>
+        <Row gutter={gutter}>
+          <Col span={6}>
+            {/* <InputNumber
+              addonBefore={
+                <Switch
+                  checkedChildren="变声开启"
+                  unCheckedChildren="变声关闭"
+                  onChange={(value) =>
+                    ezrtc.setVoiceChangeConfig({
+                      pluginStatus: value ? "on" : "off",
+                    })
+                  }
+                />
+              }
+              placeholder="-10 ~ 10"
+              defaultValue={0}
+              style={{ width: "100%" }}
+              value={profile["voiceType"]}
+              onChange={(value) => {
+                ezrtc.setVoiceChangeConfig({ voiceType: value });
+              }}
+            ></InputNumber> */}
+
+            <Switch
+              checkedChildren="变声开启"
+              unCheckedChildren="变声关闭"
+              onChange={(value) =>
+                ezrtc.setVoiceChangeConfig({
+                  pluginStatus: value ? "on" : "off",
+                })
+              }
+            />
+            <Radio.Group
+              name="radiogroup"
+              defaultValue={null}
+              style={{ marginLeft: 15 }}
+              onChange={(e) =>
+                ezrtc.setVoiceChangeConfig({ voiceType: e.target.value })
+              }
+            >
+              <Radio value={1}>大叔音</Radio>
+              <Radio value={2}>小丑音</Radio>
+            </Radio.Group>
+          </Col>
+        </Row>
+      </div>
 
       {/* 操作 */}
       <div className="page-section">
@@ -750,7 +880,13 @@ export default function Core() {
         <Row gutter={gutter} style={{ marginBottom: 10 }}>
           <Row style={{ width: "100%" }}>
             <div style={{ flex: 1 }}>日志：</div>
-            <Button onClick={exportLogs} type="primary" style={{ marginRight: 16 }}>导出控制台日志</Button>
+            <Button
+              onClick={exportLogs}
+              type="primary"
+              style={{ marginRight: 16 }}
+            >
+              导出控制台日志
+            </Button>
             <Button onClick={clearLogs}>清除日志</Button>
           </Row>
           <div className="logs">
@@ -839,23 +975,23 @@ export default function Core() {
                           >
                             切换到{item.small === true ? "大流" : "小流"}
                           </Button>
-                          {/* <Button
-                        type="primary"
-                        style={{ marginRight: 10 }}
-                        onClick={() =>
-                          changeRemoteUsersProp(item.userId, "video")
-                        }
-                      >
-                        {item.video === true ? "取消" : "订阅"}视频
-                      </Button>
-                      <Button
-                        type="primary"
-                        onClick={() =>
-                          changeRemoteUsersProp(item.userId, "audio")
-                        }
-                      >
-                        {item.audio === true ? "取消" : "订阅"}音频
-                      </Button> */}
+                          <Button
+                            type="primary"
+                            style={{ marginRight: 10 }}
+                            onClick={() =>
+                              changeRemoteUsersProp(item.userId, "video")
+                            }
+                          >
+                            {item.video === true ? "取消" : "订阅"}视频
+                          </Button>
+                          <Button
+                            type="primary"
+                            onClick={() =>
+                              changeRemoteUsersProp(item.userId, "audio")
+                            }
+                          >
+                            {item.audio === true ? "取消" : "订阅"}音频
+                          </Button>
                         </div>
                       </div>
                     </Col>
@@ -868,10 +1004,7 @@ export default function Core() {
             <div className="screen-play">
               <div>屏幕：</div>
               {remoteUsers?.length > 0 && (
-                <video
-                  id="remote-screen"
-                  style={{ width: 800, height: 600 }}
-                ></video>
+                <video id="remote-screen" style={{ width: "100%" }}></video>
               )}
             </div>
           </Col>

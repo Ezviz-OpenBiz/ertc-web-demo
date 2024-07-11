@@ -6,67 +6,74 @@ import imgStep_3_2 from "../../assets/imgs/step-3-2.png";
 
 export default (props) => {
   const clickSupport = () => {
-    props.rtc.getSupport().then((info) => {
-      const webSupport = info.isWebrtcSupport ? (
-        <div>
-          <p>
-            <Badge status="success" text="支持webrtc"></Badge>
-          </p>
-          <p>
-            <Badge status="success" text="当前浏览器是SDK支持的浏览器"></Badge>
-          </p>
-          <p>
-            <Badge
-              status="success"
-              text="当前浏览器支持获取媒体设备及媒体流"
-            ></Badge>{" "}
-          </p>
-          <p>
-            <Badge status="success" text="支持屏幕共享"></Badge>
-          </p>
-        </div>
-      ) : (
-        <div>
-          <p>
-            <Badge status="error" text="不支持webrtc"></Badge>
-          </p>
-          <p>
-            <Badge status="error" text="当前浏览器不是SDK支持的浏览器"></Badge>
-          </p>
-          <p>
-            <Badge
-              status="error"
-              text="当前浏览器不支持获取媒体设备及媒体流"
-            ></Badge>
-          </p>
-          <p>
-            <Badge status="error" text="不支持屏幕共享"></Badge>
-          </p>
-        </div>
-      );
-      const H264Support = info.isH264Support ? (
-        <div>
-          <p>
-            <Badge status="success" text="支持h264编码"></Badge>
-          </p>
-        </div>
-      ) : (
-        <div>
-          <p>
-            <Badge status="error" text="不支持h264编码"></Badge>
-          </p>
-        </div>
-      );
+    const res = props.rtc.isSupported();
+    const info = res?.data?.detail || {};
+    const webSupport = info.isSupportMedia ? (
+      <div>
+        <p>
+          <Badge status="success" text="支持音视频媒体流获取"></Badge>
+        </p>
+      </div>
+    ) : (
+      <div>
+        <p>
+          <Badge status="error" text="不支持音视频媒体流获取"></Badge>
+        </p>
+      </div>
+    );
 
-      notification.open({
-        message: "浏览器支持情况",
-        description: (
-          <div>
-            {webSupport}
-            {H264Support}
-          </div>
-        ),
-      });
+    const isSupportScreen = info.isSupportScreen ? (
+      <div>
+        <p>
+          <Badge status="success" text="支持屏幕分享"></Badge>
+        </p>
+      </div>
+    ) : (
+      <div>
+        <p>
+          <Badge status="error" text="不支持屏幕分享"></Badge>
+        </p>
+      </div>
+    );
+
+    const H264Support = info.isSupportH264 ? (
+      <div>
+        <p>
+          <Badge status="success" text="支持h264编码"></Badge>
+        </p>
+      </div>
+    ) : (
+      <div>
+        <p>
+          <Badge status="error" text="不支持h264编码"></Badge>
+        </p>
+      </div>
+    );
+
+    const isSupportWebmain = info.isSupportWebmain ? (
+      <div>
+        <p>
+          <Badge status="success" text="支持当前域名"></Badge>
+        </p>
+      </div>
+    ) : (
+      <div>
+        <p>
+          <Badge status="error" text="不支持当前域名"></Badge>
+        </p>
+      </div>
+    );
+
+    notification.open({
+      message: "浏览器支持情况",
+      description: (
+        <div>
+          {webSupport}
+          {isSupportScreen}
+          {H264Support}
+          {isSupportWebmain}
+        </div>
+      ),
     });
   };
 
@@ -89,26 +96,33 @@ export default (props) => {
     },
     {
       key: "2",
-      label: "步骤2：登录控制台创建应用",
+      label: "步骤2：获取ERTC appId",
       children: (
         <div>
+          <div>方式1：</div>
           <BadgeNode
             text={
               <span>
-                登录{" "}
-                <a
-                  target="_blank"
-                  href="https://open.ys7.com/console/home.html"
-                >
-                  萤石云开放平台
-                </a>
-                ，点击【云通话】-【实时音视频】
+                <span>
+                  登录{" "}
+                  <a
+                    target="_blank"
+                    href="https://open.ys7.com/console/home.html"
+                  >
+                    萤石云开放平台
+                  </a>
+                  ，点击【云通话】-【实时音视频】
+                </span>
               </span>
             }
           ></BadgeNode>
           <BadgeNode text="点击【创建项目】，创建实时音视频项目">
-            <img src={imgStep_2_1} style={{ width: 700 }} />
+            <img src={imgStep_2_1} style={{ width: 700, marginBottom: 10 }} />
           </BadgeNode>
+          <BadgeNode text="点击左侧菜单【云通话】- 【实时音视频】，复制 AppID 填入输入框">
+            <img src={imgStep_3_2} style={{ width: 700 }} />
+          </BadgeNode>
+          <div style={{ marginTop: 10 }}>方式2：</div>
           <BadgeNode
             text={
               <span>
@@ -124,22 +138,31 @@ export default (props) => {
     },
     {
       key: "3",
-      label: "步骤3：获取账号信息和应用信息",
+      label: "步骤3：获取ERTC资源token",
       children: (
         <div>
-          <BadgeNode text="点击左侧菜单【云通话】- 【实时音视频】，复制 AppID 填入输入框">
-            <img src={imgStep_3_2} style={{ width: 700 }} />
-          </BadgeNode>
-          {/* <BadgeNode text="点击左侧菜单【账号中心】- 【应用信息】，复制 accessToken 填入输入框">
-            <img src={imgStep_3_1} style={{ width: 700 }} />
-          </BadgeNode> */}
-          <BadgeNode text="获取 资源访问token 填入输入框">
+          <div>方式1：</div>
+          <BadgeNode text="在开放平台控制台生成">
             <span>
-              由开发者云办法给终端使用，可参考
+              在控制台 - 云通话 - 实时音视频
+              菜单下，点击【临时Token生成】，快捷生成Token{' '}
+              <a
+                target="_blank"
+                href="https://open.ys7.com/console/rtc/projectManage.html"
+              >
+                https://open.ys7.com/console/rtc/projectManage.html
+              </a>
+            </span>
+          </BadgeNode>
+
+          <div style={{ marginTop: 10 }}>方式2：</div>
+          <BadgeNode text="通过JAVA SDK获取">
+            <span>
+              由开发者云颁发给终端使用，使用本地JAVA SDK签名生成，参考
               <a target="_blank" href="https://open.ys7.com/help/1873">
                 https://open.ys7.com/help/1873
               </a>{" "}
-              使用本地JAVA SDK签名生成
+              章节E7: 颁发资源访问Token
             </span>
           </BadgeNode>
         </div>
@@ -170,15 +193,13 @@ export default (props) => {
   }
   return (
     <Collapse defaultActiveKey={["1", "4"]}>
-      {
-        collapseItems.map((item) => {
-          return (
-            <Collapse.Panel header={item.label} key={item.key}>
-              {item.children}
-            </Collapse.Panel>
-          );
-        })
-      }
+      {collapseItems.map((item) => {
+        return (
+          <Collapse.Panel header={item.label} key={item.key}>
+            {item.children}
+          </Collapse.Panel>
+        );
+      })}
     </Collapse>
   );
 };
